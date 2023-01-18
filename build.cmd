@@ -1,0 +1,1 @@
+powershell -command "esphome compile %1 2>&1 | tee -filepath buildlog.txt"

@@ -1,0 +1,48 @@
+﻿substitutions:
+  device_name: "Pax Calima fan"
+  device_id: "calima_fan"
+
+esphome:
+  name: vent-axia-svara
+
+esp32:
+  board: nodemcu-32s
+    
+logger:
+  level: VERBOSE
+
+external_components:
+  source:
+    type: local
+    path: ./components
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+    
+ota:
+
+api:
+
+web_server:
+
+ble_client:
+  - mac_address: !secret device_mac
+    id: ${device_id}_ble
+                    
+sensor:
+  - platform: pax_calima
+    ble_client_id: ${device_id}_ble
+    update_interval: 3min
+    temperature:
+      name: ${device_name} temperature
+    humidity:
+      name: ${device_name} humidity
+    illuminance:
+      name: ${device_name} illuminance
+    rotation:
+      name: ${device_name} rotation
+
+switch:
+  - platform: restart
+    name: ${device_name} restart

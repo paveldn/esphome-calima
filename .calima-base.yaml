@@ -1,0 +1,25 @@
+external_components:
+  source:
+    type: local
+    path: ./components
+
+ble_client:
+  - mac_address: ${calima_device_mac}
+    id: ${device_id}_ble
+                    
+sensor:
+  - platform: pax_calima
+    ble_client_id: ${device_id}_ble
+    update_interval: 3min
+    temperature:
+      name: ${device_name} temperature
+    humidity:
+      name: ${device_name} humidity
+    illuminance:
+      name: ${device_name} illuminance
+    rotation:
+      name: ${device_name} rotation
+
+switch:
+  - platform: restart
+    name: ${device_name} restart

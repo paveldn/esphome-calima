@@ -1,5 +1,5 @@
 ﻿substitutions:
-  device_name: "Pax Calima fan"
+  device_name: "Vent-Axia Svara"
   device_id: "calima_fan"
   calima_device_mac: !secret device_mac
 
@@ -22,7 +22,6 @@ api:
 
 web_server:
 
-# To find device MAC uncomment next two lines
 #esp32_ble_tracker:
 #pax_calima_ble:
 

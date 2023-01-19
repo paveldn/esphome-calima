@@ -105,24 +105,38 @@ void PaxCalima::read_sensors_(uint8_t *value, uint16_t value_len) {
 	ESP_LOGW(TAG, "Wrong structure size %d expected %d", value_len, SENSOR_STRUCTURE_SIZE);
 	return;
   }
-  if (temperature_sensor_ != nullptr)
+  if (this->temperature_sensor_ != nullptr)
   {
 	uint16_t sensor = value[2] + (value[3] << 8);
 	this->temperature_sensor_->publish_state(sensor / 4.0f);
   }
-  if (humidity_sensor_ != nullptr)
+  if (this->humidity_sensor_ != nullptr)
   {
 	uint16_t sensor = value[0] + (value[1] << 8);
 	float sensor_val = (sensor == 0) ? 0.0f : log2(sensor) * 10.0f;
 	this->humidity_sensor_->publish_state(sensor_val);
   }
-  if (illuminance_sensor_ != nullptr) {
+  if (this->illuminance_sensor_ != nullptr) {
 	uint16_t sensor = value[4] + (value[5] << 8);
 	this->illuminance_sensor_->publish_state(sensor);
   }
-  if (rotation_sensor_ != nullptr) {
+  if (this->rotation_sensor_ != nullptr) {
 	uint16_t sensor = value[6] + (value[7] << 8);
 	this->rotation_sensor_->publish_state(sensor);
+  }
+  if (this->fan_mode_sensor_ != nullptr)
+  {
+	uint8_t mode = value[8];
+	if ((mode >> 4) & 1 == 1)
+	  this->fan_mode_sensor_->publish_state("Boost");
+    else if ((mode & 3) == 1)
+	  this->fan_mode_sensor_->publish_state("Trickle ventilation");
+    else if ((mode & 3) == 2)
+	  this->fan_mode_sensor_->publish_state("Light ventilation");
+    else if ((mode & 3) == 3)
+	  this->fan_mode_sensor_->publish_state("Humidity ventilation");
+	else
+	  this->fan_mode_sensor_->publish_state("Off");
   }
   parent()->set_enabled(false);
 }

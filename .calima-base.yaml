@@ -6,11 +6,15 @@ external_components:
 ble_client:
   - mac_address: ${calima_device_mac}
     id: ${device_id}_ble
-                    
+
+pax_calima:
+  id: ${device_id}
+  ble_client_id: ${device_id}_ble
+  update_interval: 3min
+             
 sensor:
   - platform: pax_calima
-    ble_client_id: ${device_id}_ble
-    update_interval: 3min
+    pax_calima_id: ${device_id}
     temperature:
       name: ${device_name} temperature
     humidity:
@@ -19,6 +23,12 @@ sensor:
       name: ${device_name} illuminance
     rotation:
       name: ${device_name} rotation
+
+text_sensor:
+  - platform: pax_calima
+    pax_calima_id: ${device_id}
+    fan_mode:
+      name: ${device_name} mode
 
 switch:
   - platform: restart

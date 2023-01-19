@@ -6,6 +6,7 @@
 #include "esphome/components/ble_client/ble_client.h"
 
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/core/component.h"
 
 namespace esphome {
@@ -25,7 +26,7 @@ class PaxCalima : public PollingComponent, public ble_client::BLEClientNode {
   void set_humidity_sensor(sensor::Sensor* humidity) { humidity_sensor_ = humidity; }
   void set_illuminance_sensor(sensor::Sensor* illuminance) { illuminance_sensor_ = illuminance; }
   void set_rotation_sensor(sensor::Sensor* rotation) { rotation_sensor_ = rotation; }
-
+  void set_fan_mode_sensor(text_sensor::TextSensor *fan_mode) { fan_mode_sensor_ = fan_mode; }
  protected:
   void read_sensors_(uint8_t *value, uint16_t value_len);
   void request_read_values_();
@@ -34,6 +35,7 @@ class PaxCalima : public PollingComponent, public ble_client::BLEClientNode {
   sensor::Sensor* humidity_sensor_{nullptr};
   sensor::Sensor* illuminance_sensor_{nullptr};
   sensor::Sensor* rotation_sensor_{nullptr};
+  text_sensor::TextSensor* fan_mode_sensor_{nullptr};
   
   uint16_t read_sensor_handle_;
 

@@ -26,6 +26,10 @@ api:
 
 web_server:
 
+# To find device MAC uncomment next two lines
+#esp32_ble_tracker:
+#pax_calima_ble:
+
 ble_client:
   - mac_address: !secret device_mac
     id: ${device_id}_ble

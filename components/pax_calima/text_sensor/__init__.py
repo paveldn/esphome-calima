@@ -1,7 +1,7 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import text_sensor
-from .. import CONF_PAX_CALIMA_ID, PAX_CALIMA_COMPONENT_SCHEMA 
+from .. import CONF_PAX_CALIMA_ID, PAX_CALIMA_COMPONENT_SCHEMA, ICON_FAN
 
 from esphome.const import (
     CONF_FAN_MODE,
@@ -9,13 +9,11 @@ from esphome.const import (
 
 CODEOWNERS = ["@paveldn"]
 
-ICON_FAN = "mdi:fan"
-
 CONFIG_SCHEMA = PAX_CALIMA_COMPONENT_SCHEMA.extend(
     {
         cv.Optional(CONF_FAN_MODE): text_sensor.text_sensor_schema(
             icon=ICON_FAN
-        )
+        ),
     }
 )
 

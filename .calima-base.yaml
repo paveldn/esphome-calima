@@ -11,7 +11,14 @@ pax_calima:
   id: ${device_id}
   ble_client_id: ${device_id}_ble
   update_interval: 3min
-             
+
+fan:
+  - platform: pax_calima
+    id: ${device_id}_fan
+    pax_calima_id: ${device_id}
+    name: ${device_name} boost fan
+    run_duration: 1h
+               
 sensor:
   - platform: pax_calima
     pax_calima_id: ${device_id}

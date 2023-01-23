@@ -6,9 +6,6 @@ from esphome.const import (
     CONF_ID,
 )
 
-# Pax Calima
-# Vent-Axia Svara
-
 CODEOWNERS = ["@paveldn"]
 DEPENDENCIES = ["ble_client"]
 
@@ -18,6 +15,7 @@ PaxCalima = pax_calima_ns.class_(
 )
 
 CONF_PAX_CALIMA_ID = "pax_calima_id"
+ICON_FAN = "mdi:fan"
 
 PAX_CALIMA_COMPONENT_SCHEMA = cv.Schema(
     {

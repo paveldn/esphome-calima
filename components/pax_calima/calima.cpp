@@ -6,11 +6,12 @@ namespace esphome {
 namespace pax_calima {
 
 // Services
-//static constexpr char* SERVICE_PAX_CONFIG = "c119e858-0531-4681-9674-5a11f0e53bb4";
-//static constexpr char* SERVICE_PAX_CONNECTION = "e6834e4b-7b3a-48e6-91e4-f1d005f564d3";
-//static constexpr char* SERVICE_PAX_STATUS = "1a46a853-e5ed-4696-bac0-70e346884a26";
 esp32_ble_tracker::ESPBTUUID SERVICE_PAX_STATUS(esp32_ble_tracker::ESPBTUUID::from_raw("1a46a853-e5ed-4696-bac0-70e346884a26"));
+esp32_ble_tracker::ESPBTUUID SERVICE_PAX_CONFIG(esp32_ble_tracker::ESPBTUUID::from_raw("c119e858-0531-4681-9674-5a11f0e53bb4"));
+esp32_ble_tracker::ESPBTUUID SERVICE_PAX_CONNECTION(esp32_ble_tracker::ESPBTUUID::from_raw("e6834e4b-7b3a-48e6-91e4-f1d005f564d3"));
+// Characteristics
 esp32_ble_tracker::ESPBTUUID CHARACTERISTIC_SENSOR_DATA(esp32_ble_tracker::ESPBTUUID::from_raw("528b80e8-c47a-4c0a-bdf1-916a7748f412"));
+esp32_ble_tracker::ESPBTUUID CHARACTERISTIC_CLOCK(esp32_ble_tracker::ESPBTUUID::from_raw("6dec478e-ae0b-4186-9d82-13dda03c0682"));
 
 static const char *const TAG = "pax_calima";
 
@@ -64,17 +65,24 @@ void PaxCalima::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
 
     case ESP_GATTC_SEARCH_CMPL_EVT: {
       this->read_sensor_handle_ = 0;
-      auto *chr = this->parent()->get_characteristic(SERVICE_PAX_STATUS, CHARACTERISTIC_SENSOR_DATA);
+      esp32_ble_client::BLECharacteristic *chr = this->parent()->get_characteristic(SERVICE_PAX_STATUS, CHARACTERISTIC_SENSOR_DATA);
       if (chr == nullptr) {
         ESP_LOGW(TAG, "No sensor read characteristic found at service %s char %s", SERVICE_PAX_STATUS.to_string().c_str(),
                  CHARACTERISTIC_SENSOR_DATA.to_string().c_str());
-        break;
+      } else {
+        this->read_sensor_handle_ = chr->handle;
       }
-      this->read_sensor_handle_ = chr->handle;
-
+      this->read_clock_handle_ = 0;
+      chr = this->parent()->get_characteristic(SERVICE_PAX_CONFIG, CHARACTERISTIC_CLOCK);
+      if (chr == nullptr) {
+        ESP_LOGW(TAG, "No sensor read characteristic found at service %s char %s", SERVICE_PAX_CONFIG.to_string().c_str(),
+                 CHARACTERISTIC_CLOCK.to_string().c_str());
+      } else {
+        this->read_clock_handle_ = chr->handle;
+      }
       this->node_state = esp32_ble_tracker::ClientState::ESTABLISHED;
-
-      request_read_values_();
+      request_read_values_(this->read_sensor_handle_);
+      request_read_values_(this->read_clock_handle_);
       break;
     }
 
@@ -82,9 +90,10 @@ void PaxCalima::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
       if (param->read.conn_id != this->parent()->get_conn_id())
         break;
       if (param->read.status != ESP_GATT_OK) {
-        ESP_LOGW(TAG, "Error reading char at handle %d, status=%d", param->read.handle, param->read.status);
+        ESP_LOGW(TAG, "Error reading char at handle 0x%04X, status=%d", param->read.handle, param->read.status);
         break;
       }
+      ESP_LOGV(TAG, "Received data, handle 0x%04X, data: %s", param->read.handle, buf_to_hex(param->read.value, param->read.value_len).c_str());
       if (param->read.handle == this->read_sensor_handle_) {
         read_sensors_(param->read.value, param->read.value_len);
       }
@@ -99,7 +108,6 @@ void PaxCalima::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
 constexpr size_t SENSOR_STRUCTURE_SIZE = 12;
 
 void PaxCalima::read_sensors_(uint8_t *value, uint16_t value_len) {
-  ESP_LOGV(TAG, "result bytes: %s", buf_to_hex(value, value_len).c_str());
   if (value_len < SENSOR_STRUCTURE_SIZE)
   {
 	ESP_LOGW(TAG, "Wrong structure size %d expected %d", value_len, SENSOR_STRUCTURE_SIZE);
@@ -141,11 +149,11 @@ void PaxCalima::read_sensors_(uint8_t *value, uint16_t value_len) {
   parent()->set_enabled(false);
 }
 
-void PaxCalima::request_read_values_() {
+void PaxCalima::request_read_values_(uint16_t handle) {
   auto status = esp_ble_gattc_read_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
-                                        this->read_sensor_handle_, ESP_GATT_AUTH_REQ_NONE);
+                                        handle, ESP_GATT_AUTH_REQ_NONE);
   if (status) {
-    ESP_LOGW(TAG, "Error sending read request for sensor, status=%d", status);
+    ESP_LOGW(TAG, "Error sending read request for handle 0x%04X, status=%d", handle, status);
   }
 }
 

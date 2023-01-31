@@ -31,3 +31,6 @@ async def to_code(config):
     await cg.register_parented(var, config[CONF_PAX_CALIMA_ID])
     await cg.register_component(var, config)
     await fan.register_fan(var, config)
+    if CONF_RUN_DURATION in config:
+        cg.add(var.set_boost_duration(config[CONF_RUN_DURATION]))
+

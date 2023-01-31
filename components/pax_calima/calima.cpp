@@ -12,7 +12,9 @@ esp32_ble_tracker::ESPBTUUID SERVICE_PAX_CONNECTION(esp32_ble_tracker::ESPBTUUID
 // Characteristics
 esp32_ble_tracker::ESPBTUUID CHARACTERISTIC_SENSOR_DATA(esp32_ble_tracker::ESPBTUUID::from_raw("528b80e8-c47a-4c0a-bdf1-916a7748f412"));
 esp32_ble_tracker::ESPBTUUID CHARACTERISTIC_CLOCK(esp32_ble_tracker::ESPBTUUID::from_raw("6dec478e-ae0b-4186-9d82-13dda03c0682"));
-
+esp32_ble_tracker::ESPBTUUID CHARACTERISTIC_BOOST(esp32_ble_tracker::ESPBTUUID::from_raw("118c949c-28c8-4139-b0b3-36657fd055a9"));
+esp32_ble_tracker::ESPBTUUID CHARACTERISTIC_PIN_CODE(esp32_ble_tracker::ESPBTUUID::from_raw("4cad343a-209a-40b7-b911-4d9b3df569b2"));
+esp32_ble_tracker::ESPBTUUID CHARACTERISTIC_PIN_CONFIRMATION(esp32_ble_tracker::ESPBTUUID::from_raw("d1ae6b70-ee12-4f6d-b166-d2063dcaffe1"));
 static const char *const TAG = "pax_calima";
 
 const char hexmap[] =
@@ -48,8 +50,8 @@ std::string buf_to_hex(const uint8_t *buffer, size_t size)
 }
 
 
-void PaxCalima::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
-                                        esp_ble_gattc_cb_param_t *param) {
+void PaxCalima::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param) {
+  ESP_LOGV(TAG, "Pax Calima BT event: %d", event);
   switch (event) {
     case ESP_GATTC_OPEN_EVT: {
       if (param->open.status == ESP_GATT_OK) {
@@ -59,30 +61,30 @@ void PaxCalima::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
     }
 
     case ESP_GATTC_DISCONNECT_EVT: {
-      ESP_LOGW(TAG, "Disconnected!");
+      ESP_LOGI(TAG, "Disconnected!");
       break;
     }
 
     case ESP_GATTC_SEARCH_CMPL_EVT: {
-      this->read_sensor_handle_ = 0;
-      esp32_ble_client::BLECharacteristic *chr = this->parent()->get_characteristic(SERVICE_PAX_STATUS, CHARACTERISTIC_SENSOR_DATA);
-      if (chr == nullptr) {
-        ESP_LOGW(TAG, "No sensor read characteristic found at service %s char %s", SERVICE_PAX_STATUS.to_string().c_str(),
-                 CHARACTERISTIC_SENSOR_DATA.to_string().c_str());
-      } else {
-        this->read_sensor_handle_ = chr->handle;
-      }
-      this->read_clock_handle_ = 0;
-      chr = this->parent()->get_characteristic(SERVICE_PAX_CONFIG, CHARACTERISTIC_CLOCK);
-      if (chr == nullptr) {
-        ESP_LOGW(TAG, "No sensor read characteristic found at service %s char %s", SERVICE_PAX_CONFIG.to_string().c_str(),
-                 CHARACTERISTIC_CLOCK.to_string().c_str());
-      } else {
-        this->read_clock_handle_ = chr->handle;
+      static const std::pair<esp32_ble_tracker::ESPBTUUID, esp32_ble_tracker::ESPBTUUID> characteristics_uuids[CALIMA_MAX_HANDLERS] = {
+        {CHARACTERISTIC_SENSOR_DATA, SERVICE_PAX_STATUS},           // CALIMA_READ_SENSOR_HANDLER
+        {CHARACTERISTIC_BOOST, SERVICE_PAX_CONFIG},                 // CALIMA_BOOST_MODE_HANDLER
+        {CHARACTERISTIC_PIN_CODE, SERVICE_PAX_CONNECTION},          // CALIMA_SEND_PIN_CODE_HANDLER
+        {CHARACTERISTIC_PIN_CONFIRMATION, SERVICE_PAX_CONNECTION},  // CALIMA_CALIMA_CHECK_PIN_CODE_HANDLER
+      };
+      for (size_t ch_index = 0; ch_index < CALIMA_MAX_HANDLERS; ch_index++) {
+        this->handlers_[ch_index] = 0;
+        esp32_ble_client::BLECharacteristic *chr = this->parent()->get_characteristic(characteristics_uuids[ch_index].second, characteristics_uuids[ch_index].first);
+        if (chr == nullptr) {
+          ESP_LOGW(TAG, "No characteristic found at service %s char %s", characteristics_uuids[ch_index].first.to_string().c_str(),
+                 characteristics_uuids[ch_index].second.to_string().c_str());
+        } else {
+          this->handlers_[ch_index] = chr->handle;
+        }
       }
       this->node_state = esp32_ble_tracker::ClientState::ESTABLISHED;
-      request_read_values_(this->read_sensor_handle_);
-      request_read_values_(this->read_clock_handle_);
+	    //this->send_pin_code_();
+      this->request_read_values_(this->handlers_[CALIMA_READ_SENSOR_HANDLER]);
       break;
     }
 
@@ -93,9 +95,15 @@ void PaxCalima::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
         ESP_LOGW(TAG, "Error reading char at handle 0x%04X, status=%d", param->read.handle, param->read.status);
         break;
       }
-      ESP_LOGV(TAG, "Received data, handle 0x%04X, data: %s", param->read.handle, buf_to_hex(param->read.value, param->read.value_len).c_str());
-      if (param->read.handle == this->read_sensor_handle_) {
+      ESP_LOGD(TAG, "Received data, handle 0x%04X, data: %s", param->read.handle, buf_to_hex(param->read.value, param->read.value_len).c_str());
+      if (param->read.handle == this->handlers_[CALIMA_READ_SENSOR_HANDLER]) {
         read_sensors_(param->read.value, param->read.value_len);
+        this->request_read_values_(this->handlers_[CALIMA_BOOST_MODE_HANDLER]);
+      } else if (param->read.handle == this->handlers_[CALIMA_BOOST_MODE_HANDLER]) {
+        read_boost_(param->read.value, param->read.value_len);
+        this->parent()->set_enabled(false);
+      } else {
+        ESP_LOGW(TAG, "Unknown characteristic read %d, datya size %d", param->read.handle, param->read.value_len);
       }
       break;
     }
@@ -113,24 +121,24 @@ void PaxCalima::read_sensors_(uint8_t *value, uint16_t value_len) {
 	ESP_LOGW(TAG, "Wrong structure size %d expected %d", value_len, SENSOR_STRUCTURE_SIZE);
 	return;
   }
-  if (this->temperature_sensor_ != nullptr)
-  {
-	uint16_t sensor = value[2] + (value[3] << 8);
-	this->temperature_sensor_->publish_state(sensor / 4.0f);
-  }
-  if (this->humidity_sensor_ != nullptr)
+  if (this->sensors_[CALIMA_SENSOR_TYPE_HUMIDITY] != nullptr)
   {
 	uint16_t sensor = value[0] + (value[1] << 8);
 	float sensor_val = (sensor == 0) ? 0.0f : log2(sensor) * 10.0f;
-	this->humidity_sensor_->publish_state(sensor_val);
+	this->sensors_[CALIMA_SENSOR_TYPE_HUMIDITY]->publish_state(sensor_val);
   }
-  if (this->illuminance_sensor_ != nullptr) {
+  if (this->sensors_[CALIMA_SENSOR_TYPE_TEMPERATURE] != nullptr)
+  {
+	uint16_t sensor = value[2] + (value[3] << 8);
+	this->sensors_[CALIMA_SENSOR_TYPE_TEMPERATURE]->publish_state(sensor / 4.0f);
+  }
+  if (this->sensors_[CALIMA_SENSOR_TYPE_ILLUMINANCE] != nullptr) {
 	uint16_t sensor = value[4] + (value[5] << 8);
-	this->illuminance_sensor_->publish_state(sensor);
+	this->sensors_[CALIMA_SENSOR_TYPE_ILLUMINANCE]->publish_state(sensor);
   }
-  if (this->rotation_sensor_ != nullptr) {
+  if (this->sensors_[CALIMA_SENSOR_TYPE_ROTATION] != nullptr) {
 	uint16_t sensor = value[6] + (value[7] << 8);
-	this->rotation_sensor_->publish_state(sensor);
+	this->sensors_[CALIMA_SENSOR_TYPE_ROTATION]->publish_state(sensor);
   }
   if (this->fan_mode_sensor_ != nullptr)
   {
@@ -146,7 +154,21 @@ void PaxCalima::read_sensors_(uint8_t *value, uint16_t value_len) {
 	else
 	  this->fan_mode_sensor_->publish_state("Off");
   }
-  parent()->set_enabled(false);
+}
+
+constexpr size_t BOOST_STRUCTURE_SIZE = 5;
+
+void PaxCalima::read_boost_(uint8_t *value, uint16_t value_len) {
+  if (value_len < BOOST_STRUCTURE_SIZE)
+  {
+	ESP_LOGW(TAG, "Wrong structure size %d expected %d", value_len, BOOST_STRUCTURE_SIZE);
+	return;
+  }
+  bool state = value[0] > 0;
+  uint16_t speed = value[1] + (value[2] << 8);
+  uint16_t time = value[3] + (value[4] << 8);
+  ESP_LOGD(TAG, "Boost mode update: status %s, speed: %d rpm, time: %d seconds", state ? "On" : "Off", speed * 25, time);
+  this->boost_mode_callback_.call(state, speed, time);
 }
 
 void PaxCalima::request_read_values_(uint16_t handle) {
@@ -157,14 +179,48 @@ void PaxCalima::request_read_values_(uint16_t handle) {
   }
 }
 
+void PaxCalima::send_pin_code_() {
+  ESP_LOGV(TAG, "PaxCalima::send_pin_code_ step1");
+  if (this->has_pin_code_ && (this->handlers_[CALIMA_SEND_PIN_CODE_HANDLER] != 0))
+  {
+    ESP_LOGV(TAG, "PaxCalima::send_pin_code_ pin: %u", this->pin_code_);
+    uint8_t buffer[4];	
+	  buffer[0] = this->pin_code_ & 0xFF;
+	  buffer[1] = (this->pin_code_ >> 8) & 0xFF;
+	  buffer[2] = (this->pin_code_ >> 16)& 0xFF;
+	  buffer[3] = (this->pin_code_ >> 24)& 0xFF;
+    this->write_characteristic_(CALIMA_SEND_PIN_CODE_HANDLER, buffer, sizeof(buffer));
+	  ESP_LOGV(TAG, "PaxCalima::send_pin_code_ step3");
+  }
+  this->check_pin_code_();
+}
+
+void PaxCalima::check_pin_code_() {
+  auto status = esp_ble_gattc_read_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
+                                        this->handlers_[CALIMA_CALIMA_CHECK_PIN_CODE_HANDLER], ESP_GATT_AUTH_REQ_NONE);
+  if (status) {
+    ESP_LOGW(TAG, "Error sending read request for handle 0x%04X, status=%d", this->handlers_[CALIMA_CALIMA_CHECK_PIN_CODE_HANDLER], status);
+  }
+  this->request_read_values_(this->handlers_[CALIMA_READ_SENSOR_HANDLER]);
+}
+
 PaxCalima::PaxCalima() : PollingComponent()
 {
 }
 
 void PaxCalima::dump_config() {
+  ESP_LOGCONFIG(TAG, "Pax Calima clinet: %s", this->parent_->address_str().c_str()); 
+  ESP_LOGCONFIG(TAG, "  Temperature sensor: %s", (this->sensors_[CALIMA_SENSOR_TYPE_TEMPERATURE] != nullptr) ? "Yes" : "No");
+  ESP_LOGCONFIG(TAG, "  Humidity sensor: %s", (this->sensors_[CALIMA_SENSOR_TYPE_HUMIDITY] != nullptr) ? "Yes" : "No");
+  ESP_LOGCONFIG(TAG, "  Illuminance sensor: %s", (this->sensors_[CALIMA_SENSOR_TYPE_ILLUMINANCE] != nullptr) ? "Yes" : "No");
+  ESP_LOGCONFIG(TAG, "  Rotation speed sensor: %s", (this->sensors_[CALIMA_SENSOR_TYPE_ROTATION] != nullptr) ? "Yes" : "No");
+  ESP_LOGCONFIG(TAG, "  Fan mode sensor: %s", (this->fan_mode_sensor_ != nullptr) ? "Yes" : "No");
+  ESP_LOGCONFIG(TAG, "  Boost fan: %s", this->has_fan_ ? "Yes" : "No");
+  ESP_LOGCONFIG(TAG, "  Handlers: %d %d %d %d", this->handlers_[0], this->handlers_[1], this->handlers_[2], this->handlers_[3]);
 }
 
 void PaxCalima::update() {
+  ESP_LOGV(TAG, "PaxCalima::update");
   if (this->node_state != esp32_ble_tracker::ClientState::ESTABLISHED) {
     if (!parent()->enabled) {
       ESP_LOGW(TAG, "Reconnecting to device");
@@ -174,6 +230,70 @@ void PaxCalima::update() {
       ESP_LOGW(TAG, "Connection in progress");
     }
   }
+  else
+    this->request_read_values_(this->handlers_[CALIMA_READ_SENSOR_HANDLER]);
+}
+
+void PaxCalima::add_boost_mode_callback(std::function<void(bool, uint16_t, uint16_t)>&& callback) {
+  this->boost_mode_callback_.add(std::move(callback)); 
+  has_fan_=true;
+}
+
+void PaxCalima::set_humidity_sensor(sensor::Sensor* humidity) {
+  this->sensors_[CALIMA_SENSOR_TYPE_HUMIDITY] = humidity;
+  this->has_sensors_=true;
+}
+
+void PaxCalima::set_temperature_sensor(sensor::Sensor* temperature) {
+  this->sensors_[CALIMA_SENSOR_TYPE_TEMPERATURE] = temperature; 
+  this->has_sensors_=true;
+}
+
+void PaxCalima::set_illuminance_sensor(sensor::Sensor* illuminance) {
+  this->sensors_[CALIMA_SENSOR_TYPE_ILLUMINANCE] = illuminance; 
+  this->has_sensors_=true;
+}
+
+void PaxCalima::set_rotation_sensor(sensor::Sensor* rotation) {
+  this->sensors_[CALIMA_SENSOR_TYPE_ROTATION] = rotation; 
+  this->has_sensors_=true;
+}
+
+void PaxCalima::set_fan_mode_sensor(text_sensor::TextSensor *fan_mode) {
+  this->fan_mode_sensor_ = fan_mode;
+  this->has_sensors_=true;
+}
+ 
+void PaxCalima::set_boost_mode(bool mode, uint8_t speed, uint16_t duration) {
+  ESP_LOGD(TAG, "Boost mode: %s, speed: %d, duration: %d", mode ? "On" : "Off", speed, duration);
+  uint8_t buffer[BOOST_STRUCTURE_SIZE];
+  buffer[0] = mode ? 0x01 : 0x00;
+  uint16_t converted_speed = speed * 25;
+  buffer[1] = converted_speed & 0xFF;
+  buffer[2] = converted_speed >> 8;
+  buffer[3] = duration & 0xFF;
+  buffer[4] = duration >> 8;
+  this->write_characteristic_(CALIMA_BOOST_MODE_HANDLER, buffer, BOOST_STRUCTURE_SIZE);
+}
+ 
+bool PaxCalima::write_characteristic_(CharacteristicsHandlers handler_type, uint8_t* buffer, size_t buffer_size) {
+  if (handler_type >= CALIMA_MAX_HANDLERS) {
+    ESP_LOGW(TAG, "Wrong characteristic type %d", handler_type);
+    return false;
+  }
+  if (this->handlers_[handler_type] == 0) {
+    ESP_LOGW(TAG, "Charactersistic unavailable: %d", handler_type);
+    return false;
+  }
+  ESP_LOGV(TAG, "Writing characteristic: %d, data: %s", handler_type, buf_to_hex(buffer, buffer_size).c_str());
+  esp_err_t status = esp_ble_gattc_write_char(this->parent_->get_gattc_if(), this->parent_->get_conn_id(),
+  									 this->handlers_[handler_type], buffer_size, buffer,
+  									 ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
+  if (status != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to write characteristic %d, error #%d: %s", handler_type, status, esp_err_to_name(status));
+    return false;
+  } 
+  return true;
 }
 
 } // namespace pax_calima

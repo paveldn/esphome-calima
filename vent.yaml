@@ -2,6 +2,7 @@
   device_name: "Pax Calima fan"
   device_id: "calima_fan"
   calima_device_mac: !secret device_mac
+  calima_device_pin: !secret device_pin
 
 esphome:
   name: vent-axia-svara

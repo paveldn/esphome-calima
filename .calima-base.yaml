@@ -10,7 +10,8 @@ ble_client:
 pax_calima:
   id: ${device_id}
   ble_client_id: ${device_id}_ble
-  update_interval: 3min
+  pin: ${calima_device_pin}
+  update_interval: 1min
 
 fan:
   - platform: pax_calima
